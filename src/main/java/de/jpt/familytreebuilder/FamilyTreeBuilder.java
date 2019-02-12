@@ -1,8 +1,5 @@
 package de.jpt.familytreebuilder;
 
-import java.io.BufferedInputStream;
-import java.io.FileInputStream;
-import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -12,19 +9,14 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 
-import org.gedcom4j.exception.GedcomParserException;
-import org.gedcom4j.exception.UnsupportedGedcomCharsetException;
-import org.gedcom4j.io.reader.GedcomFileReader;
-import org.gedcom4j.model.Gedcom;
 import org.gedcom4j.model.Individual;
 import org.gedcom4j.model.IndividualEvent;
 import org.gedcom4j.model.PersonalName;
 import org.gedcom4j.model.Place;
 import org.gedcom4j.model.StringWithCustomFacts;
 import org.gedcom4j.model.enumerations.IndividualEventType;
-import org.gedcom4j.parser.GedcomParser;
 
-public class FamilyTreeBuilder {
+public class FamilyTreeBuilder implements AutoCloseable {
 	
 	private Connection conn;
 	private PreparedStatement stmtGetPerson;
@@ -48,14 +40,12 @@ public class FamilyTreeBuilder {
 			stmtGetWifes = conn.prepareStatement(
 					"select * from tng_families as f "
 					+ "join tng_people as p on f.wife = p.personid and p.gedcom = f.gedcom "
-//					+ "join ? as generation "
 					+ "where f.husband=? and f.Gedcom = '" + gedcom + "'"  
 					+ "order by f.marrdatetr");			
 			
 			stmtGetHusbands = conn.prepareStatement(
 					"select * from tng_families as f "
 					+ "join tng_people as p on f.husband = p.personid and p.gedcom = f.gedcom "
-//					+ "join ? as generation "
 					+ "where f.wife=? and f.Gedcom = '" + gedcom + "'"  
 					+ "order by f.marrdatetr");			
 				
@@ -63,42 +53,41 @@ public class FamilyTreeBuilder {
 					"select * from tng_people as pc " + 
 					"join tng_children as c on c.personID=pc.personID and c.gedcom = pc.gedcom " + 
 					"join tng_families as fam on c.familyID=fam.familyID and c.gedcom = fam.gedcom " + 
-//					"join ? as generation " +
 					"where fam.familyid = ? and pc.gedcom = '" + gedcom + "'" + 
 					"order by c.ordernum" ); 
-				
 
 		} catch (SQLException e) {
 			e.printStackTrace();
 			try {
 				conn.close();
-			} catch (SQLException ex) {
+			} catch (Throwable ex) {
 				ex.printStackTrace();
 			}
 		}
 	}
 	
-	public void printTreeFrom(String personID, int generation) throws SQLException {
+	public void printTreeFrom(String personID, String indent) throws SQLException {
 		stmtGetPerson.setString(1, personID);
 		ResultSet rs = stmtGetPerson.executeQuery();
+//		String indent = "";
 		if (rs.next()) {
 			ResultSet rsSpouse = null;
-			printPerson(rs);
+			printPerson(rs, indent);
 			if (rs.getString("sex").equals("M")) {
 				stmtGetWifes.setString(1, personID);
-				stmtGetWifes.setInt(2, generation);
+//				stmtGetWifes.setInt(2, generation);
 				rsSpouse = stmtGetWifes.executeQuery();
 			} else if (rs.getString("sex").equals("F")) {
 				stmtGetHusbands.setString(1, personID);
-				stmtGetHusbands.setInt(2, generation);
+//				stmtGetHusbands.setInt(2, generation);
 				rsSpouse = stmtGetHusbands.executeQuery();
 			}
 			while (rsSpouse.next()) {
-				printMarriage(rsSpouse);
-				printPerson(rsSpouse);
+				printMarriage(rsSpouse, indent);
+				printPerson(rsSpouse, indent);
 				String familyID = rsSpouse.getString("f.FamilyID");
 				stmtGetChildren.setString(1, familyID);
-				stmtGetChildren.setInt(2, generation);
+//				stmtGetChildren.setInt(2, generation);
 				ResultSet rsChildren = stmtGetChildren.executeQuery();
 				while (rsChildren.next()) {
 //					printPerson(rsChildren, "  ");
@@ -111,28 +100,7 @@ public class FamilyTreeBuilder {
 		rs.close();
 	}
 	
-	public Gedcom importFromGedcom(String file) throws IOException, GedcomParserException {		
-//		BufferedInputStream input = new BufferedInputStream(new FileInputStream(file));
-//		GedcomFileReader reader = new GedcomFileReader(new GedcomParser(), input);
-		
-		GedcomParser parser = new GedcomParser();
-	    parser.setStrictCustomTags(false);
-//      parser.setStrictLineBreaks(false);
-//		parser.load("testdata/Schmitt.ged");
-	    parser.load("testdata/FamilieFranzI.ged");	        
-		for (String s : parser.getWarnings()) {
-			System.err.println("W "+s);
-		}
-
-		for (String s : parser.getErrors()) {
-			System.err.println("E "+s);
-		}
-		
-		return parser.getGedcom();
-	}
-	
-
-	public TreeNode<Individual> importFromTng(String personID) throws SQLException {
+	public Individual importFromTng(String personID) throws SQLException {
 		Individual root = null;
 
 		stmtGetPerson.setString(1, personID);
@@ -141,10 +109,9 @@ public class FamilyTreeBuilder {
 			root = createIndi(rsRoot);			
 			rsRoot.close();
 			
-			root.getFamiliesWhereChild(initializeIfNeeded)
-
+			root.getFamiliesWhereChild(true);			
 			
-			
+			TreeNode<Individual> parent = new TreeNode<Individual>(root);
 			StringWithCustomFacts sex = parent.getData().getSex(); 
 			ResultSet rsSpouse = null;
 			System.err.println(sex.toString());
@@ -160,9 +127,7 @@ public class FamilyTreeBuilder {
 			}
 			while (rsSpouse.next()) {
 				TreeNode<Individual> spouse = new TreeNode<Individual>(createIndi(rsRoot), parent);
-				parent.getChildren().add(spouse);
-				
-				
+				parent.getChildren().add(spouse);				
 				
 				String familyID = rsSpouse.getString("f.FamilyID");
 				stmtGetChildren.setString(1, familyID);
@@ -215,7 +180,7 @@ public class FamilyTreeBuilder {
 		return result;		
 	}
 
-	public void printTreeFrom2(String personID, int generation) throws SQLException {
+	public void printTreeFrom2(String personID, String indent) throws SQLException {
 		
 		Queue<String> queue = new ArrayBlockingQueue<>(100);
 		queue.add(personID);
@@ -225,7 +190,7 @@ public class FamilyTreeBuilder {
 			stmtGetPerson.setString(1, id);
 			ResultSet rs = stmtGetPerson.executeQuery();			
 			if (rs.next()) {
-				printPerson(rs);
+				printPerson(rs, indent);
 				String sex = rs.getString("sex"); 
 				rs.close();
 				ResultSet rsSpouse = null;
@@ -237,9 +202,8 @@ public class FamilyTreeBuilder {
 					rsSpouse = stmtGetHusbands.executeQuery();
 				}
 				while (rsSpouse.next()) {
-					printMarriage(rsSpouse);
-					printPerson(rsSpouse);
-					generation = rsSpouse.getInt("generation");
+					printMarriage(rsSpouse, indent);
+					printPerson(rsSpouse, indent);
 					String familyID = rsSpouse.getString("f.FamilyID");
 					stmtGetChildren.setString(1, familyID);
 					ResultSet rsChildren = stmtGetChildren.executeQuery();
@@ -258,11 +222,11 @@ public class FamilyTreeBuilder {
 		}
 	}		
 	
-	private void printMarriage(ResultSet rs) throws SQLException {
+	private void printMarriage(ResultSet rs, String indent) throws SQLException {
 		System.out.println(indent + "oo\t" + rs.getString("marrdate")+ " in " +rs.getString("marrplace"));		
 	}
 
-	private void printPerson(ResultSet rs) throws SQLException {
+	private void printPerson(ResultSet rs, String indent) throws SQLException {
 
 		StringBuffer text = new StringBuffer();
 		text.append(rs.getString("personid"));
@@ -296,13 +260,12 @@ public class FamilyTreeBuilder {
 	}
 
 	@Override
-	protected void finalize() throws Throwable {
+	public void close() {
 		try {
 			conn.close();
-		} catch (SQLException e) {
+		} catch (Throwable e) {
 			e.printStackTrace();
 		}
-		super.finalize();
 	}	
 	
 	public static void main(String[] args) {
@@ -313,28 +276,17 @@ public class FamilyTreeBuilder {
 		    conn = DriverManager.getConnection("jdbc:mysql://localhost/tng", "tng", "KUmrp7N8NupSpnKz");
 
 		    FamilyTreeBuilder ftb = new FamilyTreeBuilder(conn, "Familie");
-		    try {
-		    	ftb.printTreeFrom2("I81", 1);		        
-//		    	ftb.importTngToGedcomFrom("I81");
-		    }
-		    catch (SQLException e){
-		        System.out.println("SQLException: " + e.getMessage());
-		        System.out.println("SQLState:     " + e.getSQLState());
-		        System.out.println("VendorError:  " + e.getErrorCode());
-		        e.printStackTrace();
-		    }
-		    finally {
-		    	try {
-					ftb.finalize();
-				} catch (Throwable e) {
-					e.printStackTrace();
-				}
+		    try {		    	
+		    	ftb.importFromTng("I81");
+		    	ftb.printTreeFrom2("I81", "");		        
+		    } finally {
+		    	ftb.close();
 		    }	
 		} catch (SQLException e) {
 		    System.out.println("SQLException: " + e.getMessage());
 		    System.out.println("SQLState:     " + e.getSQLState());
 		    System.out.println("VendorError:  " + e.getErrorCode());
-		} catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {
+		} catch (Throwable e) {
 			e.printStackTrace();
 		}		
 	}
