@@ -50,7 +50,6 @@ public class FamilyTreeBuilderFromGedcom {
 		String eheCounter = "";
 		for (FamilySpouse familySpouse : indi.getFamiliesWhereSpouse(true)) {
 			Family family = familySpouse.getFamily();
-//			indent+="  ";
 			printMarriage(output, family.getEvents(true), indent+"  ", eheCounter);
 			
 			try {
@@ -60,23 +59,29 @@ public class FamilyTreeBuilderFromGedcom {
 				} else if (family.getWife().getIndividual().equals(indi)) {				
 					spouse = family.getHusband().getIndividual();
 				} else {
-					// Gleichgeschlechtliche Ehe?
+					// if this happens, there is something seriously wrong.
+					// RTE should not be caught be surrounding try
 					throw new RuntimeException("Illegal Family:"+family);
 				}
 				printIndi(output, spouse, indent+"  ");
 			} catch (Exception e) {
+				// we don't care. on any error just output NN.
 				output.append(SPACER);
 				output.append(sep);
 				output.append(indent);
 				output.println("    NN");
+				System.err.println("error on: " + family + " - " + e.getMessage());
 			}
 			
-//			indent+="  ";
 			for (IndividualReference childRef : family.getChildren(true)) {
 				printTreeFrom(output, childRef.getIndividual(), indent+"    ");				
 			}
+			
+			// start counting from second marriage. nobody has more than 8 marriages ;)
 			if ("".contentEquals(eheCounter)) {
-				eheCounter = "II";
+				eheCounter = "I";
+			} else if ("IIII".equals(eheCounter)){
+				eheCounter = "V";
 			} else {
 				eheCounter += 'I';
 			}
@@ -96,13 +101,13 @@ public class FamilyTreeBuilderFromGedcom {
 			try {
 				output.append(m.getDate().getValue());
 			} catch (NullPointerException e) {
-//				output.append("MD-NPE");
+				// just ignore, means it's empty
 			}
 			output.append(SPACER);
 			try {
 				output.append(m.getPlace().getPlaceName());
 			} catch (NullPointerException e) {
-//				output.append("MP-NPE");
+				// just ignore, means it's empty
 			}
 			break;
 		}		
@@ -114,11 +119,12 @@ public class FamilyTreeBuilderFromGedcom {
 			try {
 				output.append(e.getDate().getValue());
 			} catch (NullPointerException x) {
-//				output.append("D-NPE");
 				try {
 					output.append(altEvents.get(0).getDate().getValue());
 				} catch (IndexOutOfBoundsException | NullPointerException x2) {
+					// just ignore, means it's empty
 				} catch (Throwable t) {
+					// output but keep on working
 					t.printStackTrace();
 				}
 			}
@@ -126,12 +132,12 @@ public class FamilyTreeBuilderFromGedcom {
 			try {
 				output.append(e.getPlace().getPlaceName());
 			} catch (NullPointerException x) {
-//				output.append("P-NPE");
 				try {
 					output.append(altEvents.get(0).getPlace().getPlaceName());
 				} catch (IndexOutOfBoundsException | NullPointerException x2) {
+					// just ignore, means it's empty
 				} catch (Throwable t) {
-					t.printStackTrace();
+					// output but keep on working
 				}
 			}
 			return; // print only first
