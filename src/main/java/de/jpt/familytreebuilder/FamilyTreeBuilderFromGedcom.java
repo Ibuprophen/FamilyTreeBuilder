@@ -79,7 +79,7 @@ public class FamilyTreeBuilderFromGedcom {
 			
 			// start counting from second marriage. nobody has more than 8 marriages ;)
 			if ("".contentEquals(eheCounter)) {
-				eheCounter = "I";
+				eheCounter = "II";
 			} else if ("IIII".equals(eheCounter)){
 				eheCounter = "V";
 			} else {
@@ -171,7 +171,7 @@ public class FamilyTreeBuilderFromGedcom {
 	public static void main(String[] args) {
 		try {
 			String sep = ";";
-			String filename = "FamilieFranzI-V2.1";
+			String filename = "FamilieFranzI-V2.2";
 			FamilyTreeBuilderFromGedcom ftb = new FamilyTreeBuilderFromGedcom(sep);
 			ftb.importFromGedcom("testdata/"+filename+".ged");
 			ftb.printTreeFrom(System.out, ftb.findIndiById("I81"), "");		
